@@ -1,0 +1,43 @@
+{
+  "modelName": "accelerometer_lsm6dsm",
+  "type": "accelerometer",
+  "unit": "g",
+  "ranges": {
+    "phys": {
+      "min": -16.0,
+      "max": 16.0
+    },
+    "elec": {
+      "min": 0.0,
+      "max": 0.0
+    },
+    "sampling": {
+      "min": 0.001,
+      "max": 1000.0
+    },
+    "threshold": {
+      "min": -16.0,
+      "max": 16.0
+    }
+  },
+  "conversion": {
+    "type": "polynomial",
+    "coefficients": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "properties": {
+    "sensitivity": 0.061,
+    "fullScaleRange": 2,
+    "outputDataRate": 104.0
+  },
+  "metrology": {
+    "uncertaintyPdf": "uniform",
+    "absUncertainty": 0.1,
+    "uB": 0.06,
+    "k": 2.0
+  }
+}

@@ -1,0 +1,461 @@
+services:
+  mongo-gui:
+    container_name: "mongo-gui"
+    image: ugleiton/mongo-gui
+    restart: always
+    ports:
+      - "4321:4321"
+    environment:
+      - MONGO_URL=mongodb://root:aaaa@mongodb:27017/?authSource=admin
+      - USERNAME=root
+      - PASSWORD=aaaa
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.54
+  postgres:
+    image: "postgres:17"
+    restart: unless-stopped
+    environment:
+      - "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+      - "POSTGRES_USER=${POSTGRES_USER}"
+    volumes:
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+
+
+    ports:
+      - "32768:5432"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.20
+
+  calibrator-manager:
+    image: "docker.io/christiand9699/calibrator-manager:latest"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    expose:
+      - "8080"
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres/CALIBRATOR"
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      OS: "raspberrypi"
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "http://100.87.231.127:8081/realms/measurestream-dev"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.15
+
+  sensor-manager:
+    image: "docker.io/christiand9699/sensor-manager-mario:latest"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    expose:
+      - "8080"
+    environment:
+
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres/${POSTGRES_DB}"
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      OS: "dev"
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "http://100.87.231.127:8081/realms/measurestream-dev"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+    volumes:
+      - ./templates/sensor-templates:/app/templates:ro
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.10
+
+  mongodb:
+    image: mongo:4.4.18
+    restart: unless-stopped
+    environment:
+      - "MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}"
+      - "MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}"
+      - "MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}"
+    ports:
+      - "27017:27017"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.23
+    volumes:
+      - mongo_data:/data/db
+      - ./mongod.conf:/etc/mongod.conf
+    command: ["mongod", "--config", "/etc/mongod.conf"]
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  measure-manager:
+    image: "docker.io/christiand9699/measure:latest"
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    expose:
+      - "8080"
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${MONGO_INITDB_DATABASE}?authSource=admin
+      OS: dev
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.11
+
+  keycloak-db:
+    image: "postgres:17"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB_KEYCLOAK}
+      POSTGRES_USER: ${POSTGRES_USER_KEYCLOAK}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_KEYCLOAK}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.21
+
+  keycloak:
+    image: keycloak/keycloak:26.4.2
+    depends_on:
+      - keycloak-db
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db/${POSTGRES_DB_KEYCLOAK}
+      KC_DB_USERNAME: ${POSTGRES_USER_KEYCLOAK}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD_KEYCLOAK}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_CERTIFICATE_FILE: ""
+      KC_HTTPS_CERTIFICATE_KEY_FILE: ""
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HOSTNAME_URL: "http://100.87.231.127:8081"
+
+    command: >
+      start-dev
+
+    ports:
+      - "8081:8080"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.22
+  # grafana rimosso - non serve in locale
+
+  dcc-service:
+    image: "docker.io/christiand9699/dcc-service:latest"
+    user: root
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - kafka
+      - garage
+    expose:
+      - "8080"
+    environment:
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres/${POSTGRES_DB}"
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      GEMIMEG_BACKEND_URL: ${GEMIMEG_BACKEND_URL:-http://gemimeg-backend:10001}
+      GATEWAY_IAM_URL: ${GATEWAY_IAM_URL:-http://gateway-iam:8080}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "http://100.87.231.127:8081/realms/measurestream-dev"
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:29092"
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_DEFAULT_REGION}
+      S3_ENDPOINT: "http://garage:3900"
+      S3_BUCKET: "dccs"
+      S3_PUBLIC_URL: "http://100.87.231.127:3900/dccs"
+      PYTHON_CMD: "python3"
+      CALIBRATION_SCRIPT_PATH: "/app/calibration/scripts/analisi_calib_data.py"
+      CALIBRATION_MODELS_PATH: "/app/calibration/models_in"
+      CALIBRATION_RUNS_PATH: "/tmp/calibration-runs"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+      KEYS_PATH: "/app/keys"
+    volumes:
+      - ./calibration/scripts:/app/calibration/scripts:ro
+      - ./calibration/models_in:/app/calibration/models_in:ro
+      - /home/mario/backend/sign/keys:/app/keys:ro
+      - calibration_runs_data:/tmp/calibration-runs
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.14
+
+  gemimeg-backend:
+    image: "docker.io/christiand9699/gemimeg-backend:latest-dev-mario"
+    restart: unless-stopped
+    depends_on:
+      - dcc-service
+      - gateway-iam
+    expose:
+      - "10001"
+    ports:
+      - "3007:10001"
+    environment:
+      SERVER_PORT: 10001
+      DCC_SERVICE_URL: "http://dcc-service:8080"
+      GATEWAY_IAM_URL: "http://gateway-iam:8080"
+      FRONTEND_URL: "http://gemimeg-frontend:80"
+      JAVA_OPTS: "-Xmx512m -Xms256m -XX:+UseG1GC"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.129
+
+  gemimeg-frontend:
+    image: "docker.io/christiand9699/gemimeg-frontend:latest-dev-mario"
+    restart: unless-stopped
+    depends_on:
+      - gemimeg-backend
+      - gateway-iam
+    ports:
+      - "3006:80"
+    environment:
+      API_URL: "http://172.20.0.200:8080"
+      BACKEND_HOST: "gemimeg-backend"
+      BACKEND_PORT: "10001"
+      GATEWAY_HOST: "gateway-iam"
+      GATEWAY_PORT: "8080"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.128
+
+  frontend:
+    image: "frontend-patched:latest"
+    restart: unless-stopped
+    depends_on:
+      - gateway-iam
+      - sensor-manager
+      - measure-manager
+      - dcc-service
+    ports:
+      - "5173:80"
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf
+    environment:
+      VITE_API_URL: "http://172.20.0.200:8080"
+      VITE_BACKEND_URL: "http://172.20.0.129:10001"
+      VITE_GATEWAY_URL: "http://172.20.0.200:8080"
+      VITE_DCC_SERVICE_URL: "http://172.20.0.14:8080"
+      VITE_SENSOR_MANAGER_URL: "http://172.20.0.10:8080"
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.12
+
+  gateway-iam:
+    image: "gateway-iam-patched:latest"
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres/${POSTGRES_DB}"
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_GATEWAY_CLIENT_SECRET: ${KEYCLOAK_GATEWAY_CLIENT_SECRET}
+      OS: "dev"
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.200
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://172.20.0.200:8080/me"]
+      interval: 10s # Ogni 10 secondi
+      timeout: 5s # Timeout di 5 secondi per la risposta
+      retries: 5 # Prova fino a 5 volte prima di fallire
+      start_period: 120s
+
+  kafka:
+    image: bitnamilegacy/kafka:3.8.0
+    hostname: kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:29092,CONTROLLER://:9093,PLAINTEXT_HOST://0.0.0.0:9092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:29092,PLAINTEXT_HOST://100.87.231.127:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_HEAP_OPTS=-Xms256m -Xmx512m
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.40
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.3.2
+    container_name: kafka-connect
+    profiles:
+      - kafka-external
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_BOOTSTRAP_SERVERS: "kafka:29092"
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: "connect-cluster"
+      CONNECT_CONFIG_STORAGE_TOPIC: "_connect-configs"
+      CONNECT_OFFSET_STORAGE_TOPIC: "_connect-offsets"
+      CONNECT_STATUS_STORAGE_TOPIC: "_connect-status"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.converters.ByteArrayConverter"
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
+      CONNECT_LOG4J_LOGGERS: "org.reflections=ERROR"
+    volumes:
+      - ./connect-plugins:/usr/share/confluent-hub-components
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.41
+
+  kafkastream:
+    image: "docker.io/christiand9699/kafkastream:latest"
+    restart: unless-stopped
+    profiles:
+      - kafka-external
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_APPLICATION_NAME: kafka-stream
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+    depends_on:
+      - kafka
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.51
+
+  settings:
+    image: "docker.io/christiand9699/settings:latest-dev-mario"
+    restart: unless-stopped
+    expose:
+      - 8080
+    environment:
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_CLIENT: ${MQTT_CLIENT}
+      MQTT_BROKER: ${MQTT_BROKER}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres/SETTINGS
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:+UseG1GC -XX:ActiveProcessorCount=1
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.13
+
+  garage:
+    image:  "docker.io/dxflrs/garage:v2.2.0"
+    container_name: garage
+    restart: unless-stopped
+    ports:
+      - "3900:3900"
+      - "3901:3901"
+      - "3902:3902"
+      - "3903:3903"
+    environment:
+      - RPC_SECRET=${RPC_SECRET}
+    volumes:
+      # External persistent storage (data survives project deletion)
+      - /home/mattrovio/garage-data/data:/var/lib/garage/data
+      - /home/mattrovio/garage-data/meta:/var/lib/garage/meta
+      # Internal project config (mounted at default location)
+      - ./garage/config/garage.toml:/etc/garage.toml
+    command: ["/garage", "server"]
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.60
+
+  garage-init:
+    image: curlimages/curl:latest
+    container_name: garage-init
+    depends_on:
+      garage:
+        condition: service_started
+    volumes:
+      - ./garage/init-garage.sh:/init-garage.sh:ro
+    environment:
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+    entrypoint: ["/bin/sh", "/init-garage.sh"]
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.59
+
+
+  garage-webui:
+    image: khairul169/garage-webui:latest
+    container_name: garage-webui-integrated
+
+    volumes:
+      - ./garage/config/garage.toml:/etc/garage.toml
+    depends_on:
+      - garage
+    ports:
+      - 3909:3909
+    environment:
+      API_BASE_URL: "http://garage:3903"
+      S3_ENDPOINT_URL: "http://garage:3900"
+      AUTH_USER_PASS: ${AUTH_USER_PASS}
+    restart: unless-stopped
+    networks:
+      app_network:
+        ipv4_address: 172.20.0.61
+
+  calibration:
+    image: python:3.11-slim
+    profiles:
+      - calibration
+    working_dir: /app/calibration
+    environment:
+      - CALIBRATION_SCRIPT_PATH=/app/calibration/scripts/analisi_calib_data.py
+      - CALIBRATION_MODELS_PATH=/app/calibration/models_in
+      - CALIBRATION_RUNS_PATH=/tmp/calibration-runs
+      - PYTHON_CMD=python3
+      - PIP_NO_CACHE_DIR=1
+    volumes:
+      - ./calibration:/app/calibration
+      - calibration_runs:/tmp/calibration-runs
+    command: >
+      sh -c "
+        pip install --quiet numpy scipy matplotlib reportlab &&
+        python3 scripts/analisi_calib_data.py
+          --input test/data_in/export2_tmp126_lsb16.json
+          --sensor models_in/ntc_temperature.json
+          --ref models_in/fluke_9142.json
+          --cert-input template_in/certificato_funzione_input.json
+          --cert-output certificato_out/certificato_funzione_filled.json
+          --pdf certificato_out/ntc_cert_funzione.pdf
+          --xml certificato_out/ntc_calibration_certificate.xml
+          --conformity-output certificato_out/conformity.json
+      "
+
+volumes:
+  postgres-data:
+  keycloak-db-data:
+  mongo_data:
+  kafka_data:
+  calibration_runs:
+  calibration_runs_data:
+
+networks:
+  app_network:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24

@@ -1,0 +1,43 @@
+{
+  "modelName": "humidity_hpp845e",
+  "type": "humidity",
+  "unit": "%RH",
+  "ranges": {
+    "phys": {
+      "min": 0.0,
+      "max": 100.0
+    },
+    "elec": {
+      "min": 0.0,
+      "max": 100.0
+    },
+    "sampling": {
+      "min": 0.001,
+      "max": 1000.0
+    },
+    "threshold": {
+      "min": 0.0,
+      "max": 100.0
+    }
+  },
+  "conversion": {
+    "type": "polynomial",
+    "coefficients": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "properties": {
+    "responseTime": 8.0,
+    "accuracy": 1.8,
+    "hysteresis": 1.0
+  },
+  "metrology": {
+    "uncertaintyPdf": "uniform",
+    "absUncertainty": 2.0,
+    "uB": 1.15,
+    "k": 2.0
+  }
+}

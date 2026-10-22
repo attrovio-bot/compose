@@ -7,3 +7,5 @@ mqtt-source.json
 *.png
 *.pdf
 *.env
+keycloak-certs/
+*.class

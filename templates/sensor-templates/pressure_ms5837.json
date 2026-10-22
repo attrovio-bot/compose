@@ -1,0 +1,43 @@
+{
+  "modelName": "pressure_ms5837",
+  "type": "pressure",
+  "unit": "mbar",
+  "ranges": {
+    "phys": {
+      "min": 300.0,
+      "max": 1200.0
+    },
+    "elec": {
+      "min": 0.0,
+      "max": 0.0
+    },
+    "sampling": {
+      "min": 0.001,
+      "max": 1000.0
+    },
+    "threshold": {
+      "min": 300.0,
+      "max": 1200.0
+    }
+  },
+  "conversion": {
+    "type": "polynomial",
+    "coefficients": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "properties": {
+    "resolution": 0.1,
+    "responseTime": 0.5,
+    "accuracy": 1.0
+  },
+  "metrology": {
+    "uncertaintyPdf": "uniform",
+    "absUncertainty": 2.0,
+    "uB": 1.15,
+    "k": 2.0
+  }
+}

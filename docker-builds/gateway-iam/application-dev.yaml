@@ -1,0 +1,218 @@
+spring:
+  application:
+    name: iam_module
+  main:
+    web-application-type: servlet
+
+  cloud:
+    gateway:
+      mvc:
+        http-client:
+          type: AUTODETECT
+        routes:
+          # --- DCC Service Routes ---
+          # Specific API routes for dcc-service
+          - id: dcc-service-api
+            uri: http://172.20.0.14:8080
+            predicates:
+              - Path=/api/dcc/**
+            filters:
+              - TokenRelay
+
+          - id: dcc-service-mus
+            uri: http://172.20.0.14:8080
+            predicates:
+              - Path=/api/mus/**
+            filters:
+              - TokenRelay
+
+          - id: dcc-service-public
+            uri: http://172.20.0.14:8080
+            predicates:
+              - Path=/api/public/**
+
+          # Generic proxy for dcc-service (handles /verify-token, etc.)
+          - id: dcc-service-proxy
+            uri: http://172.20.0.14:8080
+            predicates:
+              - Path=/dcc-service/**
+            filters:
+              - StripPrefix=1
+              - TokenRelay
+
+          # --- Gemimeg Backend Routes ---
+          # Specific api/v1 route for Gemimeg
+          - id: gemimeg-api-v1
+            uri: http://172.20.0.129:10001
+            predicates:
+              - Path=/api/v1/**
+            filters:
+              - TokenRelay
+
+          # Other Gemimeg routes
+          - id: gemimeg-backend
+            uri: http://172.20.0.129:10001
+            predicates:
+              - Path=/API/gemimeg/**
+            filters:
+              - TokenRelay
+
+          - id: gemimeg-backend-cache
+            uri: http://172.20.0.129:10001
+            predicates:
+              - Path=/API/cache/**
+            filters:
+              - TokenRelay
+
+          - id: gemimeg-backend-version
+            uri: http://172.20.0.129:10001
+            predicates:
+              - Path=/API/version/**
+
+          # --- Sensor Manager Routes ---
+          - id: sensor-manager-nodes
+            uri: http://172.20.0.10:8080
+            predicates:
+              - Path=/API/nodes/**
+            filters:
+              - TokenRelay
+
+          - id: sensor-manager-user
+            uri: http://172.20.0.10:8080
+            predicates:
+              - Path=/API/user/**
+            filters:
+              - TokenRelay
+
+          - id: sensor-manager-measurementunit
+            uri: http://172.20.0.10:8080
+            predicates:
+              - Path=/API/measurementunits/**
+            filters:
+              - TokenRelay
+
+          - id: sensor-manager-controlunits
+            uri: http://172.20.0.10:8080
+            predicates:
+              - Path=/API/controlunits/**
+            filters:
+              - TokenRelay
+
+          # --- Measure Manager Routes ---
+          - id: measure-manager
+            uri: http://172.20.0.11:8080
+            predicates:
+              - Path=/API/measures/**
+            filters:
+              - TokenRelay
+
+          # --- Frontend Routes ---
+          - id: frontend
+            uri: http://172.20.0.12:80
+            predicates:
+              - Path=/ui/**
+
+          - id: gemimeg-frontend
+            uri: http://172.20.0.128:80
+            predicates:
+              - Path=/gemimegdcc/**
+
+          - id: frontend-dev
+            uri: http://172.20.0.1:5173
+            predicates:
+              - Path=/uidev/**
+
+          - id: frontend-gemimeg-dev
+            uri: http://172.20.0.1:10000
+            predicates:
+              - Path=/gemimeg/**
+
+          - id: home
+            uri: http://localhost:8080
+            predicates:
+              - Path=/
+            filters:
+              - RedirectTo=301,https://dev.christiandellisanti.uk/ui
+
+          - id: grafana
+            uri: https://grafana.christiandellisanti.uk
+            predicates:
+              - Path=/grafana/**
+            filters:
+              - StripPrefix=1
+              - RemoveResponseHeader=X-Frame-Options
+
+          - id: kafka-rest
+            uri: http://kafka-rest:8082
+            predicates:
+              - Path=/kafka-rest/**
+            filters:
+              - StripPrefix=1
+
+          # --- Settings Routes ---
+          - id: settings-command
+            uri: http://172.20.0.13:8080
+            predicates:
+              - Path=/API/command/**
+            filters:
+              - TokenRelay
+
+          - id: settings-cu
+            uri: http://172.20.0.13:8080
+            predicates:
+              - Path=/API/cu-setting/**
+            filters:
+              - TokenRelay
+
+          - id: settings-mu
+            uri: http://172.20.0.13:8080
+            predicates:
+              - Path=/API/mu-setting/**
+            filters:
+              - TokenRelay
+
+          # --- Calibrator Manager Routes ---
+          - id: calibrator-manager
+            uri: http://172.20.0.15:8080
+            predicates:
+              - Path=/API/calibrationunits/**
+            filters:
+              - TokenRelay
+
+          - id: calibrator-manager-1
+            uri: http://172.20.0.15:8080
+            predicates:
+              - Path=/API/calibrator/**
+            filters:
+              - TokenRelay
+
+        form-filter:
+          enabled: false
+
+  security:
+    oauth2:
+      client:
+        provider:
+          keycloak:
+            issuer-uri: https://auth.christiandellisanti.uk/realms/measurestream-dev
+
+        registration:
+          gateway:
+            provider: keycloak
+            client-id: gateway-dev
+            client-secret: ${KEYCLOAK_GATEWAY_CLIENT_SECRET}
+            scope:
+              - openid
+              - offline_access
+            authorization-grant-type: authorization_code
+            redirect-uri: https://dev.christiandellisanti.uk/login/oauth2/code/gateway
+
+  servlet:
+    multipart:
+      enabled: false
+      max-file-size: 100000000
+      max-request-size: 100000000
+
+server:
+  max-http-request-header-size: 5MB
+  port: 8080
